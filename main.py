@@ -14,12 +14,10 @@ from pdf_generator import generate_meeting_brief
 
 load_dotenv()
 
-# Load environment variables
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 TRELLO_API_KEY = os.getenv("TRELLO_API_KEY")
 TRELLO_API_SECRET = os.getenv("TRELLO_API_SECRET")
 
-# Set OpenAI API key
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
@@ -64,7 +62,6 @@ def generate_meeting_minutes_and_tasks(transcript, language, num_tasks, particip
         "}"
     )
 
-    # Use the `client.chat.completions.create` method
     response = client.chat.completions.create(
         model="gpt-4-turbo",
         messages=[
@@ -73,7 +70,6 @@ def generate_meeting_minutes_and_tasks(transcript, language, num_tasks, particip
         ]
     )
 
-    # Access response content
     print("[generate_meeting_minutes_and_tasks]: Response received.")
     return response.choices[0].message.content
 
@@ -118,7 +114,6 @@ def fix_invalid_json(original_response):
         ]
     )
 
-    # Extract and return the corrected JSON
     print("[fix_invalid_json]: Corrected JSON response received.")
     print(f"[fix_invalid_json]: {response.choices[0].message.content}")
     return response.choices[0].message.content
@@ -160,14 +155,12 @@ def add_to_trello(task_list, meeting_summary, board_name, task_list_name, summar
     if not summary_list_obj:
         summary_list_obj = board.add_list(summary_list_name)
 
-    # Add tasks
     for task in task_list:
         task_name = task["task"]
         task_description = task.get("description", "No description provided.")  # Add task description
         assignee_name = task.get("assignee", None)
         due_date = task.get("due_date", None)
 
-        # Validate and format the due date
         if due_date:
             try:
                 print(f"[add_to_trello]: Raw due_date for task '{task_name}': {due_date}")
@@ -177,14 +170,12 @@ def add_to_trello(task_list, meeting_summary, board_name, task_list_name, summar
                 print(f"[add_to_trello]: Invalid date format for task '{task_name}'. Skipping due date.")
                 due_date = None
 
-        # Create the Trello card with a description
         card = task_list_obj.add_card(name=task_name, desc=task_description, due=due_date)
         if assignee_name:
             print(f"[add_to_trello]: Task '{task_name}' assigned to '{assignee_name}'.")
         else:
             print(f"[add_to_trello]: Task '{task_name}' left unassigned.")
 
-    # Add meeting summary with date
     today = datetime.now().strftime("%Y-%m-%d")
     summary_title = f"Meeting Summary - {today}"
     # if pdf_file is not none add the pdf file to the card
@@ -200,13 +191,12 @@ def main(audio_file, trello_board, task_list_name, summary_list_name, generate_p
     print("[main]: Starting process...")
     try:
         transcript, language = transcribe_audio_with_whisper(audio_file)
-        task_count = transcript.count("task")  # Estimate the number of tasks from the transcript
+        task_count = transcript.count("task")  
         print(f"[main]: Estimated number of tasks: {task_count}")
 
         response = generate_meeting_minutes_and_tasks(transcript, language, task_count, get_trello_members(trello_board))
         meeting_minutes, tasks = parse_response(response)
 
-        # Fix invalid JSON if necessary
         if meeting_minutes is None or tasks is None:
             response = fix_invalid_json(response)
             meeting_minutes, tasks = parse_response(response)
