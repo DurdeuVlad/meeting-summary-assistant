@@ -10,6 +10,8 @@ import json
 from datetime import datetime, timedelta
 from dateutil import parser
 
+from pdf_generator import generate_meeting_brief
+
 load_dotenv()
 
 # Load environment variables
@@ -45,12 +47,19 @@ def generate_meeting_minutes_and_tasks(transcript, language, num_tasks, particip
     prompt = (
         f"Here is a transcript of a meeting in {language}:\n{transcript}\n\n"
         f"There are {num_tasks} tasks discussed in the meeting. Please summarize the meeting into minutes using bullet points and tasks. "
-        f"Assign only to the participants who are presend on this list: {participant_names}.\n"
+        f"Add details for each task, including the task description, assignee (if any), and due date (if any). "
+        f"Please ensure the tasks are clear and actionable and task descriptions are detailed enough for the assignee to understand. You may also assign tasks to specific participants if mentioned. "
+        f"Assign only to the participants who are present on this list: {participant_names}.\n"
         f"Assign deadlines if mentioned, if they are not mentioned assign reasonable deadlines for each task, ensuring they are distributed appropriately over time. Today is {datetime.now()}, so assign them from this starting date. Respond in the following JSON format:\n"
         "{\n"
         "  \"meeting_minutes\": \"<summary_of_meeting_bullet_points>\",\n"
         "  \"tasks\": [\n"
-        "    {\"task\": \"<task_description>\", \"assignee\": \"<assignee_if_any>\", \"due_date\": \"<due_date_if_any>\"}\n"
+        "    {\n"
+        "      \"task\": \"<task_name>\",\n"
+        "      \"description\": \"<task_description_details>\",\n"
+        "      \"assignee\": \"<assignee_if_any>\",\n"
+        "      \"due_date\": \"<due_date_if_any>\"\n"
+        "    }\n"
         "  ]\n"
         "}"
     )
@@ -88,9 +97,14 @@ def fix_invalid_json(original_response):
         f"The following response is not valid JSON:\n{original_response}\n\n"
         "Please correct it and ensure it follows the specified JSON format, DO NOT WRITE ANYTHING ELSE:"
         "{\n"
-        "  \"meeting_minutes\": \"<summary_of_meeting>\",\n"
+        "  \"meeting_minutes\": \"<summary_of_meeting_bullet_points>\",\n"
         "  \"tasks\": [\n"
-        "    {\"task\": \"<task_description>\", \"assignee\": \"<assignee_if_any>\", \"due_date\": \"<due_date_if_any>\"}\n"
+        "    {\n"
+        "      \"task\": \"<task_name>\",\n"
+        "      \"description\": \"<task_description_details>\",\n"
+        "      \"assignee\": \"<assignee_if_any>\",\n"
+        "      \"due_date\": \"<due_date_if_any>\"\n"
+        "    }\n"
         "  ]\n"
         "}"
     )
@@ -126,7 +140,7 @@ def get_trello_members(board_name):
 
 
 
-def add_to_trello(task_list, meeting_summary, board_name, task_list_name, summary_list_name):
+def add_to_trello(task_list, meeting_summary, board_name, task_list_name, summary_list_name, pdf_file=None):
     """Add tasks and meeting summary to separate Trello lists."""
     print("[add_to_trello]: Adding data to Trello...")
     client = TrelloClient(
@@ -173,11 +187,15 @@ def add_to_trello(task_list, meeting_summary, board_name, task_list_name, summar
     # Add meeting summary with date
     today = datetime.now().strftime("%Y-%m-%d")
     summary_title = f"Meeting Summary - {today}"
-    summary_list_obj.add_card(name=summary_title, desc=meeting_summary)
+    # if pdf_file is not none add the pdf file to the card
+    summary_card = summary_list_obj.add_card(name=summary_title, desc=meeting_summary)
+    if pdf_file:
+        summary_card.attach(name=summary_title, file=open(pdf_file, 'rb'))
+        print(f"Attached PDF '{pdf_file}' to card '{summary_title}'.")
     print(f"[add_to_trello]: Meeting summary added with title '{summary_title}'.")
 
 
-def main(audio_file, trello_board, task_list_name, summary_list_name):
+def main(audio_file, trello_board, task_list_name, summary_list_name, generate_pdf=False, generate_trello=False):
     """Main function to process audio, generate tasks, and add them to Trello."""
     print("[main]: Starting process...")
     try:
@@ -195,17 +213,34 @@ def main(audio_file, trello_board, task_list_name, summary_list_name):
             if meeting_minutes is None or tasks is None:
                 print("[main]: Failed to parse corrected JSON. Exiting.")
                 return
-
-        add_to_trello(tasks, meeting_minutes, trello_board, task_list_name, summary_list_name)
+        pdf_path = None
+        if generate_pdf:
+            # Generate PDF
+            pdf_path = generate_meeting_brief(json.dumps({"meeting_minutes": meeting_minutes, "tasks": tasks}), trello_board, datetime.now().strftime("%Y-%m-%d"))
+        if generate_trello:
+            # Add to Trello
+            add_to_trello(tasks, meeting_minutes, trello_board, task_list_name, summary_list_name, pdf_path)
         print("[main]: Process completed successfully.")
     except Exception as e:
         print(f"[main]: Error occurred - {e}")
 
 
+
 if __name__ == "__main__":
+    # for testing
+    # main(
+    #     audio_file="test-meeting.mp3",
+    #     trello_board="Leftsilon Games",
+    #     task_list_name="In Lucru",
+    #     summary_list_name="Meeting Summaries"
+    # )
+
     main(
         audio_file="test-meeting.mp3",
         trello_board="Leftsilon Games",
         task_list_name="In Lucru",
-        summary_list_name="Meeting Summaries"
+        summary_list_name="Meeting Summaries",
+        generate_pdf=True,
+        generate_trello=True
     )
+
